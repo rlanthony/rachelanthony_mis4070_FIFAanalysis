@@ -1,0 +1,560 @@
+---
+title: "Insights into the 2022 FIFA World Cup"
+author: "Rachel Anthony and Christian Sipley"
+date: "2023-04-19"
+output: html_document
+---
+
+
+## Importing the Data
+
+The FIFA data set was pulled from Kaggle at https://www.kaggle.com/datasets/die9origephit/fifa-world-cup-2022-complete-dataset. It provides 88 variables to analyze from the 2022 World Cup for each of the 64 games.
+
+```{r import_data}
+dfFIFA <- read.csv("data/Fifa_world_cup_matches.csv")
+```
+
+## Data Cleaning and Preparation
+
+To begin to understand the data we will be working with, we used the `str()` command on dfFIFA. This allows us to note what data structure each variable is in and whether that is the best structure for us to be working with in our analysis.
+
+```{r dfFIFA_structure}
+str(dfFIFA)
+```
+
+The `date`, `category`, and `hour` variables need to be changed into different data types to be able to use them in analysis.
+
+```{r convert_data}
+# Convert category, hour, team1, team2 to a factor since it is a group variable
+dfFIFA$category <- as.factor(dfFIFA$category)
+dfFIFA$category <- as.factor(dfFIFA$category)
+dfFIFA$hour <- as.factor(dfFIFA$hour)
+dfFIFA$team1 <- as.factor(dfFIFA$team1)
+dfFIFA$team2 <- as.factor(dfFIFA$team2)
+
+# Convert date to a date
+dfFIFA$date <- as.Date(dfFIFA$date, format = "%d-%b-%y")
+```
+
+Confirm the changes above have been made.
+
+```{r confim_data_change}
+str(dfFIFA$category)
+str(dfFIFA$hour)
+str(dfFIFA$date)
+```
+
+## Normalizing the data
+
+Put all the data for team 1 in one dataframe and all data for team 2 in another
+1. team 1 and stats
+2. team 2 and stats
+3. game that has a game PK with links to the two team and all the game stats.
+
+
+
+A game identifier column will be called `matchID` and is added to the existing `dfFIFA` using the `cbind()` function. `matchID` is created using the `seq()` function that will use increments of 1 to create the data.
+```{r add_matchID}
+dfFIFA <- data.frame(cbind(matchID = c(seq(1:64)), dfFIFA))
+```
+
+Create two columns `team1won` and `team2won` using a vector of TRUE and FALSE to put either a 1 or 0 based on if they won or not. A 1 means they won. This will be the outcome variable that will be used when creating the models. Ties mean that both are 0, and we are only looking at definite wins in our model.
+
+```{r won}
+# create column if team 1 won
+result <- dfFIFA$number.of.goals.team1 > dfFIFA$number.of.goals.team2
+dfFIFA$team1won[team1won] <- 1
+dfFIFA$team1won[!team1won] <- 0
+
+# create column if team 2 won
+team2won <- dfFIFA$number.of.goals.team1 < dfFIFA$number.of.goals.team2
+dfFIFA$team2won[team2won] <- 1
+dfFIFA$team2won[!team2won] <- 0
+
+```
+
+```{r}
+dfFIFA$team1won <- as.factor(dfFIFA$team1won)
+dfFIFA$team2won <-as.factor(dfFIFA$team2won)
+```
+
+Create a new data frame that pulls only information about the game, and use a sequence to create a key that identifies the match. The columns to put in this data frame are `team1` `team2` `date` `hour` and `category`. 
+
+```{r game_df}
+dfGameFIFA <- data.frame(dfFIFA$matchID, dfFIFA$team1, dfFIFA$team2, dfFIFA$category, dfFIFA$hour, dfFIFA$date, dfFIFA$possession.in.contest)
+```
+
+
+To create the team data frame, odd and even indexes will be used to select only some columns so that there are not duplicates. `rbind()` will be used to select the information for the other teams.
+
+```{r evenodd_idx}
+# for team 1 columns
+even_indexes<-seq(12,90,2)
+
+# for team 2 columns
+odd_indexes<-seq(13,91,2)
+```
+
+
+```{r team1_df}
+# create the data frame that has the data just for team 1
+dfTeam1 <- data.frame(dfFIFA$matchID, dfFIFA$team1, dfFIFA$possession.team1, dfFIFA$number.of.goals.team1, dfFIFA[,even_indexes])
+```
+
+
+```{r team2_df}
+# create the data frame that has the data just for team 2
+dfTeam2 <- data.frame(dfFIFA$matchID, dfFIFA$team2, dfFIFA$possession.team2, dfFIFA$number.of.goals.team2, dfFIFA[,odd_indexes])
+```
+
+
+```{r teams_df}
+# the column names of the two data frames must be the same for rbind() to be successful
+names(dfTeam2) <- names(dfTeam1)
+
+# merge the two team data frames into 1
+dfTeams <- data.frame(rbind(dfTeam1, dfTeam2))
+```
+
+```{r}
+names(dfTeams) <- sub("\\.team1", "", names(dfTeams))
+
+colnames(dfTeams)[1] ="matchID"
+colnames(dfTeams)[2] ="team.name"
+colnames(dfTeams)[3] ="possession"
+colnames(dfTeams)[4] ="number.of.goals"
+colnames(dfTeams)[13] ="attempts.outside.the.penalty.area"
+colnames(dfTeams)[25] ="completed.line.breaks"
+colnames(dfTeams)[27] ="completed.defensive.line.breaks"
+colnames(dfTeams)[44] ="result"
+
+```
+
+##  QUESTION OF INTEREST: 
+##  WHAT DOES IT TAKE TO WIN A GAME IN THE 2022 FIFA WORLD CUP?
+
+Our question explores the variables that are most important in determining who wins a game in the World Cup. To determine this, we will begin exploring our data through a variety of tabular and visual data.
+
+
+## Exploratory Data Analysis
+
+Data visualization that will help with variable selection.
+
+Import these libraries that will be used in our EDA.
+
+```{r importlib}
+library(ggplot2)
+
+library(corrplot)
+
+library(dplyr)
+
+library(caret)
+
+library(rpart)
+
+library(rpart.plot)
+```
+We now wanted to visually explore the data to ensure that we are selecting the correct variables and this will help us actually see anything we could have missed. Once we loaded our libraries, we first decided to explore the Team data through a scatter matrix. The right most side would be the final result whether it is a win or not. The first matrix displays columns 3 through 10. An example of a strong relationship that is positively correlated is the variables `goals scored` and `number of attempts inside the penalty area`. This makes sense due to the fact that the penalty area is the closest area by the goal. The closer you are taking shots at the goal, the more likely you are to score. We also know that the 'Goals' and `Assists` are directly related to the result of any sport game. Two other variables that had a positive trend are `possession` and `total attempts`. We can conclude that when a team has possessed the ball more than their opponent, they are more likely to get more attempts on net. Thus, we can then look at how `possession` and `total attempts` and see how they correlate to `Goals` which then determine the outcome of the game. Overall, this first scatter matrix allowed us to establish heavily weighted variables that the number of goals and assists are dependent on to determine the final result. 
+
+The next matrices are all pretty similar. Towards the middle of our data, the variables begin to all have a positive correlation amongst one another. There were only a few variables that almost looked to have no correlation. For example, the type of channel that the team goes through on the field does not really have any relation to the amount of attempts inside the penalty area. Another important variable to highlight is the `total number of line breaks` and `line breaks in behind`. This essentially is the amount of time an offense breaks down a defensive line and gets past them on the attack. As the total amount of offers to the ball increase, so does the total amount of line breaks, overall resulting in getting closer to the penalty area for a goal. The idea with having both team1 and team2 data is we essentially can also predict what it takes to actually beat a specific team based on their weaknesses throughout the World Cup. From the following Matrices, we are concluding that one variable does not directly affect whether a team wins or loses, however, it is a combination of a various amount that could better the team's probability.
+
+```{r scatt_matrix}
+scatter_matrix1 <- pairs(dfTeams[,c(3:10, 44)], lower.panel = NULL)
+
+scatter_matrix2 <- pairs(dfTeams[,c(11:18, 44)], lower.panel = NULL)
+
+scatter_matrix3 <- pairs(dfTeams[,c(19:26, 44)], lower.panel = NULL)
+
+scatter_matrix4 <- pairs(dfTeams[,c(27:34, 44)], lower.panel = NULL)
+
+scatter_matrix5 <- pairs(dfTeams[,c(35:44)], lower.panel = NULL)
+
+```
+
+```{r corrplot}
+# CORRPLOT 1
+correl1 = cor(dfTeams[,c(3:10)])
+
+corrplot(correl1)
+
+# CORRPLOT 2
+correl2 = cor(dfTeams[,c(11:18)])
+
+corrplot(correl2, tl.cex = 0.7)
+
+# CORRPLOT 3
+correl3 = cor(dfTeams[,c(19:26)])
+
+corrplot(correl3, tl.cex = 0.7)
+
+# CORRPLOT 4
+correl4 = cor(dfTeams[,c(27:34)])
+
+corrplot(correl4, tl.cex = 0.7)
+
+# CORRPLOT 5
+correl5 = cor(dfTeams[,c(35:43)])
+
+corrplot(correl5)
+```
+
+For the next visualization, we wanted to use correlation plots as these are another great way to visualize the strength of relationships between variables. Taking a look at the first plot, we began to see very similar results as the scatters. We saw that as a team increases the amount of 'possession' the team should have a higher probability of getting more attempts on goal. However, this does not necessarily mean that more possession means the team is going to win. Another important relationship to highlight is 'completed defensive line breaks' and the total number of 'passes completed'. We can conclude that a team that passes the ball more will ultimately get more completed line breaks which will result in more attempts on target.
+
+```{r histo_elevation}
+
+histo <- ggplot(dfTeams, aes(x = attempts.inside.the.penalty.area, fill = result)) +
+  geom_histogram(bins = 15) +
+  ggtitle("Histogram of the Number of Attempts Inside the Penalty Area by Winner of Match") +
+  xlab("Number of Attempts Inside the Penalty Area") +
+  scale_fill_manual(name = "Outcome", values=c("red", "green"), labels=c("Lost", "Won"))
+  
+
+```
+
+```{r scatter}
+  library(GGally)
+  ggpairs(dfTeams, columns = 10:18, aes(color = result), upper = list(continuous = wrap("cor", size = 2.5))) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text.y = element_text(hjust = 1, size = 6.5))
+  
+  ggpairs(dfTeams, columns = 19:27, aes(color = result), upper = list(continuous = wrap("cor", size = 2.5))) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text.y = element_text(hjust = 1, size = 6.5))
+  
+  ggpairs(dfTeams, columns = 28:36, aes(color = result), upper = list(continuous = wrap("cor", size = 2.5))) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text.y = element_text(hjust = 1, size = 6.5))
+  
+  ggpairs(dfTeams, columns = 37:43, aes(color = result), upper = list(continuous = wrap("cor", size = 2.5))) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text.y = element_text(hjust = 1, size = 6.5))
+```
+
+## Building Models
+
+Before building the models, the `dfTeams` data set must be split into a training and testing set. The `createDataParition()` function from the `caret` package will be used to do so. The split will be 80/20.
+
+```{r teams_partition}
+set.seed(123)
+inTrain <- createDataPartition(
+  y = dfTeams$result,
+  p = .80,
+  list = FALSE
+)
+
+team_train <- dfTeams[inTrain,]
+team_test <- dfTeams[-inTrain,]
+```
+
+### Null Model
+
+The null model is the simplest model and predicts a 0 for every entry. We started with this model because it is best to start with the simplest model first and then try more complex ones. The accuracy of this model can be found below for both the training and the testing set. A confusion matrix is used to determine the number of true positives, true negatives, false positives, and false negatives.
+
+```{r tree_null}
+# Create a vector of 0's
+model_train_null <- rep(0, nrow(team_train))
+model_test_null <- rep(0, nrow(team_test))
+
+cm_train_null <- caret::confusionMatrix(as.factor(model_train_null), team_train$result, positive="1")
+cm_train_null
+
+cm_test_null <- caret::confusionMatrix(as.factor(model_test_null), team_test$result, positive="1")
+cm_test_null
+```
+
+From the confusion matrix, we can see that the null model did not accurately predict any true positives, which is why the sensitivity is 0.000, but it did accurately predict some true negatives, which is also why the specificity is 1.000. Looking solely at the accuracy at 0.625, the model does not perform terribly, but when taking into account the sensitivity and specificity, it is clear that the null model is not a good predictor of our outcome variable.
+
+
+### Logistic Regression
+
+Next, we tried using a logistic regression model to predict our outcome variable. A logistic regression was used rather than a linear regression because our outcome variable is binary (categorical) rather than continuous, and so the linear model could not be applied. The `glm()` function is used to create the model and the variables passed into the model were selected based on our EDA. Three different logistic regression models were used with different variables to try to build the model that best predicts the `result` outcome variable. For each model that was constructed, a corresponding confusion matrix was created to explain the performance of the models to be used to determine which of the three logistic regression models was the best.
+
+#### Logistic Regression Models on the Training Set
+
+```{r lr1_train}
+# Fit model
+model_lr1 <- glm(result ~ total.offers.to.receive + passes + assists + receptions.between.midfield.and.defensive.lines,  
+               data=team_train, family=binomial(link="logit"))
+
+## Convert fitted model values to fitted classes
+fitted_class_lr1 <- (model_lr1$fit > 0.5) * 1
+
+# Create and display confusion matrix
+
+cm_train_lr1 <- confusionMatrix(as.factor(fitted_class_lr1), as.factor(model_lr1$y), positive="1")
+
+cm_train_lr1
+
+```
+
+In our first logistic regression model, we used three variables as our predictors: `total.offers.to.receive`, `passes`, `assists`, and `receptions.between.midfield.and.defensive.lines`. When building this model, we did note that `assists` may be too closely tied with predicting the winner of a match as it is very closely linked to the number of goals scored as you cannot have an assist without a goal but you can have a goal without an assist. This could potentially be a cause of multicollinearity in our models, which is where two or more independent variables in a model are highly correlated, and it can be misleading of the importance of a variable. Nevertheless, we decided to include it in one model to see the effect of it on the accuracy of a model.
+
+
+
+```{r lr2_train}
+# Fit model
+model_lr2 <- glm(result ~ passes.completed + crosses + corners + switches.of.play.completed,  
+               data=team_train, family=binomial(link="logit"))
+
+## Convert fitted model values to fitted classes
+fitted_class_lr2 <- (model_lr2$fit > 0.5) * 1
+
+# Create and display confusion matrix
+
+cm_train_lr2 <- confusionMatrix(as.factor(fitted_class_lr2), as.factor(model_lr2$y), positive="1")
+
+cm_train_lr2
+
+```
+
+
+```{r lr3_train}
+# Fit model
+model_lr3 <- glm(result ~ passes + on.target.attempts + possession + receptions.between.midfield.and.defensive.lines + crosses,
+               data=team_train, family=binomial(link="logit"))
+
+## Convert fitted model values to fitted classes
+fitted_class_lr3 <- (model_lr3$fit > 0.5) * 1
+
+# Create and display confusion matrix
+
+cm_train_lr3 <- confusionMatrix(as.factor(fitted_class_lr3), as.factor(model_lr3$y), positive="1")
+
+cm_train_lr3
+
+```
+We used the `sprintf()` method to pull specific values from the confusion matrix for each logistic regression model and output them all in a single spot. The measures of the confusion matrix could be pulled using the syntax below since its data structure is a list.
+
+
+```{r lmtrain_summary}
+# Logistic Regression Model #1
+sprintf("Logistic Model #1 - Training Set:  Accuracy = %8.4f  Sensitivity = %8.4f  Specificity = %8.4f  F1 = %8.4f", 
+        cm_train_lr1$overall["Accuracy"],
+        cm_train_lr1$byClass["Sensitivity"],
+        cm_train_lr1$byClass["Specificity"],
+        cm_train_lr1$byClass["F1"])
+
+# Logistic Regression Model #2
+sprintf("Logistic Model #2 - Training Set:  Accuracy = %8.4f  Sensitivity = %8.4f  Specificity = %8.4f  F1 = %8.4f", 
+        cm_train_lr2$overall["Accuracy"],
+        cm_train_lr2$byClass["Sensitivity"],
+        cm_train_lr2$byClass["Specificity"],
+        cm_train_lr2$byClass["F1"])
+
+# Logistic Regression Model #3
+sprintf("Logistic Model #3 - Training Set:  Accuracy = %8.4f  Sensitivity = %8.4f  Specificity = %8.4f  F1 = %8.4f", 
+        cm_train_lr3$overall["Accuracy"],
+        cm_train_lr3$byClass["Sensitivity"],
+        cm_train_lr3$byClass["Specificity"],
+        cm_train_lr3$byClass["F1"])
+```
+
+As mentioned previously, we used a variety of variables in each model to try to select the ones that are best at predicting the outcome of a match based on the least amount of variables to build the most parsimonious model. Looking solely at how the models perform on the training sets, we concluded logistic regression model #3 was the best model, even though model #1 had more accurate performance. However, we determined that the `assists` variable was too correlated to our outcome one, which hindered its usability. Logistic model #3 had a high accuracy and specificity and a moderately high sensitivity with values at 0.75, 0.84, and 0.60, respectively.
+
+
+#### Logistic Regression Models on the Testing Set
+
+```{r lr1_test}
+# Make predictions on test data set
+pred_lr1 <- predict(model_lr1, newdata = team_test, type = "response")
+
+
+predicted_class_lr1 <- (pred_lr1 > 0.5) * 1
+                          
+cm_test_lr1 <- confusionMatrix(as.factor(predicted_class_lr1), team_test$result, positive="1")
+
+cm_test_lr1
+
+```
+
+```{r lr2_test}
+# Make predictions on test data set
+pred_lr2 <- predict(model_lr2, newdata = team_test, type = "response")
+
+
+predicted_class_lr2 <- (pred_lr2 > 0.5) * 1
+                          
+cm_test_lr2 <- confusionMatrix(as.factor(predicted_class_lr2), team_test$result, positive="1")
+
+cm_test_lr2
+
+```
+
+
+```{r lr3_test}
+# Make predictions on test data set
+pred_lr3 <- predict(model_lr3, newdata = team_test, type = "response")
+
+
+predicted_class_lr3 <- (pred_lr3 > 0.5) * 1
+                          
+cm_test_lr3 <- confusionMatrix(as.factor(predicted_class_lr3), team_test$result, positive="1")
+
+cm_test_lr3
+
+```
+
+
+```{r lmtest_summary}
+# Logistic Regression Model #1
+sprintf("Logistic Model #1 - Test Set:  Accuracy = %8.4f  Sensitivity = %8.4f  Specificity = %8.4f  F1 = %8.4f", 
+        cm_test_lr1$overall["Accuracy"],
+        cm_test_lr1$byClass["Sensitivity"],
+        cm_test_lr1$byClass["Specificity"],
+        cm_test_lr1$byClass["F1"])
+
+# Logistic Regression Model #2
+sprintf("Logistic Model #2 - Test Set:  Accuracy = %8.4f  Sensitivity = %8.4f  Specificity = %8.4f  F1 = %8.4f", 
+        cm_test_lr2$overall["Accuracy"],
+        cm_test_lr2$byClass["Sensitivity"],
+        cm_test_lr2$byClass["Specificity"],
+        cm_test_lr2$byClass["F1"])
+
+# Logistic Regression Model #3
+sprintf("Logistic Model #3 - Test Set:  Accuracy = %8.4f  Sensitivity = %8.4f  Specificity = %8.4f  F1 = %8.4f", 
+        cm_test_lr3$overall["Accuracy"],
+        cm_test_lr3$byClass["Sensitivity"],
+        cm_test_lr3$byClass["Specificity"],
+        cm_test_lr3$byClass["F1"])
+
+
+```
+
+When looking at how the models performed on the testing set, it is clear model #2 performs very poorly as the sensitivity is extremely low at 0.11. Even though its specificity is 1.0, looking at the statistics holistically, it is clear the model is not accurately predicting the outcome variable. As mentioned above, we felt model #3 was the best model to accurately predict the winner of the 2023 FIFA World Cup match, and when looking at the testing set's model performance, there does not appear to be signs of overfitting as the models only perform slightly worse in terms of the accuracy and specificity, which is expected on the testing set. Interestingly, the model actually improves the sensitivity of the data (0.67 compared to 0.60). We attribute this to the fact there are fewer data points in the testing set causing the divide between the number of 0s and 1s in the sets to be reduced.
+
+
+### Classification and Regression Tree
+
+It is important to try multiple different model types when trying performing data modeling, which is why we decided to build a classification and regression tree model(CART) using the same sets of variables we used in all three logistic regression models. CART models perform a series of splits on the data and predict the outcomes based on different values and splits. The function used to build CART models is the `rpart()` function and the method is `class`. As with the logistic regresison models, we need to renumber the values produced by the function to have them be either 0 or 1 to match our outcome variable categories.
+
+#### CART Models on the Training Set
+
+```{r tree1_train}
+model_tree1 <- rpart(result ~ total.offers.to.receive + passes + assists + receptions.between.midfield.and.defensive.lines,  
+               data=team_train, method = "class")
+
+fitted_class_tree1 <- predict(model_tree1, type="class")
+
+model_tree1$y <- model_tree1$y - 1
+
+cm_train_tree1 <- confusionMatrix(as.factor(fitted_class_tree1), as.factor(model_tree1$y), positive="1")
+cm_train_tree1
+```
+
+```{r tree2_train}
+model_tree2 <- rpart(result ~ passes.completed + crosses + corners + switches.of.play.completed,  
+               data=team_train, method = "class")
+
+fitted_class_tree2 <- predict(model_tree2, type="class")
+
+model_tree2$y <- model_tree2$y - 1
+
+cm_train_tree2 <- confusionMatrix(as.factor(fitted_class_tree2), as.factor(model_tree2$y), positive="1")
+cm_train_tree2
+```
+
+```{r tree3_train}
+model_tree3 <- rpart(result ~ passes + on.target.attempts + possession + receptions.between.midfield.and.defensive.lines +   crosses, data=team_train, method = "class")
+
+fitted_class_tree3 <- predict(model_tree3, type="class")
+
+model_tree3$y <- model_tree3$y - 1
+
+cm_train_tree3 <- confusionMatrix(as.factor(fitted_class_tree3), as.factor(model_tree3$y), positive="1")
+cm_train_tree3
+```
+```{r treetrain_summary}
+# CART Model #1
+sprintf("Decision Tree Model #1 - Training Set:  Accuracy = %8.4f  Sensitivity = %8.4f  Specificity = %8.4f  F1 = %8.4f", 
+        cm_train_tree1$overall["Accuracy"],
+        cm_train_tree1$byClass["Sensitivity"],
+        cm_train_tree1$byClass["Specificity"],
+        cm_train_tree1$byClass["F1"])
+
+# CART Model #2
+sprintf("Decision Tree Model #2 - Training Set:  Accuracy = %8.4f  Sensitivity = %8.4f  Specificity = %8.4f  F1 = %8.4f", 
+        cm_train_tree2$overall["Accuracy"],
+        cm_train_tree2$byClass["Sensitivity"],
+        cm_train_tree2$byClass["Specificity"],
+        cm_train_tree2$byClass["F1"])
+
+# CART Model #3
+sprintf("Decision Tree Model #3 - Training Set:  Accuracy = %8.4f  Sensitivity = %8.4f  Specificity = %8.4f  F1 = %8.4f", 
+        cm_train_tree3$overall["Accuracy"],
+        cm_train_tree3$byClass["Sensitivity"],
+        cm_train_tree3$byClass["Specificity"],
+        cm_train_tree3$byClass["F1"])
+```
+
+When comparing the logistic regression models' performance to that of the CART models, the CART models perform better overall than their corresponding logistic regression models. This is seen as all selected statistics for the models are higher than those of the logistic regression models. They still are using the same variables to build the models, but the inter-workings behind the models and how they make predictions differ, which is why the results are different as well. As we stick with our conclusion that model #1 with the `assist` variable is problematic in terms of multicollinearity, CART model #3 has the best performance on the training set as its accuracy is high at 0.78, sensitivity at 0.73, and specificity at 0.81.
+
+#### CART Models Graphically
+
+```{r tree_graphic}
+rpart.plot(model_tree1)
+
+rpart.plot(model_tree2)
+
+rpart.plot(model_tree3)
+```
+
+The `rpart.plot()` function allows you to visually see the interworkings of the CART models. As stated above, there is a condition that lies between the two branches and depending on which way the variable falls will determine the outcome. Interestingly enough, the model predicts that the team will win if their passes are less than 240, as shown by the first split of the tree. You can go through the tree and see the different thresholds of the variables that causes the model to predict one outcome over the other.
+
+#### CART Models on the Testing Set
+
+```{r tree1_test}
+
+predicted_class_tree1 <- predict(model_tree1, newdata = team_test, type = "class")
+
+cm_test_tree1 <- confusionMatrix(as.factor(predicted_class_tree1), as.factor(team_test$result), positive="1")
+
+cm_test_tree1
+
+```
+
+```{r tree2_test}
+
+predicted_class_tree2 <- predict(model_tree2, newdata = team_test, type = "class")
+
+cm_test_tree2 <- confusionMatrix(as.factor(predicted_class_tree2), as.factor(team_test$result), positive="1")
+
+cm_test_tree2
+
+```
+
+```{r tree3_test}
+
+predicted_class_tree3 <- predict(model_tree3, newdata = team_test, type = "class")
+
+cm_test_tree3 <- confusionMatrix(as.factor(predicted_class_tree3), as.factor(team_test$result), positive="1")
+
+cm_test_tree3
+
+```
+
+```{r treetest_summary}
+# CART Model #1
+sprintf("Decision Tree Model #1 - Test Set:  Accuracy = %8.4f  Sensitivity = %8.4f  Specificity = %8.4f  F1 = %8.4f", 
+        cm_test_tree1$overall["Accuracy"],
+        cm_test_tree1$byClass["Sensitivity"],
+        cm_test_tree1$byClass["Specificity"],
+        cm_test_tree1$byClass["F1"])
+
+# CART Model #2
+sprintf("Decision Tree Model #2 - Test Set:  Accuracy = %8.4f  Sensitivity = %8.4f  Specificity = %8.4f  F1 = %8.4f", 
+        cm_test_tree2$overall["Accuracy"],
+        cm_test_tree2$byClass["Sensitivity"],
+        cm_test_tree2$byClass["Specificity"],
+        cm_test_tree2$byClass["F1"])
+
+# CART Model #3
+sprintf("Decision Tree Model #3 - Test Set:  Accuracy = %8.4f  Sensitivity = %8.4f  Specificity = %8.4f  F1 = %8.4f", 
+        cm_test_tree3$overall["Accuracy"],
+        cm_test_tree3$byClass["Sensitivity"],
+        cm_test_tree3$byClass["Specificity"],
+        cm_test_tree3$byClass["F1"])
+```
+
+For most of the metrics pulled, the models on the testing set, but once again that is almost expected when building models as the data is new to the input. Looking at CART Model #3, it outperforms the logistic regression model for the same variables on every metric. Its accuracy, sensitivity, specificity, and F1 score are all slightly better than those of the logistic regression model, meaning the CART model more accurately predicts our outcome variable.
+
+
+## ANSWER: WHAT DOES IT TAKE TO WIN A GAME IN THE 2022 FIFA WORLD CUP?
+
+We can conclude that there is not one single variable that ultimately determines the winner of the match. However, based on or modeling specifically decision tree #3, we found that the variables; `passes`, `on.target.attempts`, `possession`, `receptions.between.midfield.and.defensive.lines`, and `crosses` all play an important roll in determining the result of the match. This was supported by the confusion matrix and its corresponding statistics. They showed the model to be fairly accurate in the prediction of the outcome variable. We can use this as a base assumption, as more time would allow to further dissect this data set. However, our end goal was to address this question but also create a supporting visualizing tool to assist with the EDA through the form of a Shiny App / Dashboard.

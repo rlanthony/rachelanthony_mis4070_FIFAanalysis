@@ -1,0 +1,45 @@
+---
+title: "Insights into the 2022 FIFA World Cup"
+author: "Rachel Anthony and Christian Sipley"
+date: "2023-02-22"
+output: html_document
+---
+
+Advanced Business Analytics – Final Project Proposal
+====================================================
+
+Team Members
+------------
+Christian Sipley and Rachel Anthony
+
+Project Title
+-------------
+Insights into the 2022 FIFA World Cup 
+
+Type of Final Project
+---------------------
+Our project will mainly align with the project type 1 description where we will be analyzing a data set that presents information about the 2022 FIFA World Cup, primarily using R. We will extend the scope of the type 1 project by displaying our analysis in a dashboard using the flexdashboard package and hosting it in a web app using Shiny. 
+
+Executive Summary of the Proposed Project
+-----------------------------------------
+This project will analyze characteristics of all matches in the 2022 FIFA World Cup to understand how different factors relate to the outcome of the matches. In order to do so, we will begin by exploring our data to understand what it entails before analyzing the data. The analysis will come in various forms such as by calculating different metrics, creating visualizations to draw conclusions from, and also attempting to create a model that can predict the outcome of games based on relevant variables. R will be the primary language used to complete our project; however, we are interested in finding ways to incorporate Python into our project where it would be easier to use instead of R, but it wiil be applied to our project as we learn its capabilities and benefits.
+
+A primary goal of this project is to be able to output our R analysis in the form of a dashboard using the flexdashboard package as it will expand our knowledge on the power of R. It will also allow us to present our findings in a visually appealing method that can make drawing conclusions easier for those reviewing our analysis. Not only do we want to include static visualizations in the dashboard, but alslo animated ones using the gganimate package. This animation feature will be used intentionally when analyzing time series data and sparingly to ensure the dashboard is not too busy. If time and resources allows, we also want to expand the depth of our project by putting our dashboard into the form of a web app using Shiny. This is something we came across while researching the functions of R and are interested in learning how to use it. 
+
+Overall, the goal of this project is to analyze variables of the World Cup, draw conclusions from how they interact with one another, and understand how they relate to the outcome of the match. Our process will be documented in a R Markdown Document, but we will also produce a dashboard that highlights the visuals of our analysis in an aesthetic reporting medium.
+
+Data Needs and Sources
+-----------------------
+Our dataset comes from Kaggle (https://www.kaggle.com/datasets/die9origephit/fifa-world-cup-2022-complete-dataset), and it provides 88 different variables to analyze on each of the 64 games of the 2022 World Cup. One of the ways to transform the data that we are already thinking to make the analysis clearer for us is creating a match primary key, creating two separate dataframe (one for each team in the match), and linking those tables by the match ID.  
+
+Anticipated Challenges
+-----------------------
+Our first challenge will be determining how to be clean and transform the data to make it ready for analysis. We have mentioned above our initial thoughts on how we should go about this. However, this may change as we find what structure works best for us to be able to extract the information we desire from the data. Another challenge will be looking through the 88 variables in the data set and creating questions we want our analysis to answer. We predict that our initial data exploration will help us get a clear picture on interesting aspects of the data to analyze. If we are looking for other areas or questions to explore but are having difficulties coming up with them, we may consult research from other soccer related projects to see if our data will allow us to extrapolate a similar type of information.
+
+Besides challenges with working and analyzing the data, the other challenges will arise as we are working with new R packages and softwares. We want to create a dashboard and work with gganimate, which we have not done before. Hence, there will be a learning curve as we try to learn the syntax of the packages. Also, we mentioned turning the dashboard into a simple web app using Shiny, if time allows, which will present additional challenges as it is another area we both are unfamiliar with. Nevertheless, we want to push ourselves to learn more advanced features of R, which this project scope will allow us to do.
+
+Personal Learning Objectives
+----------------------------
+This project focuses on utilizing R in R Studio to explore and visualize large datasets, specifically the 2022 FIFA World Cup. By the end of this project, we plan to gain a better comprehensive understanding of data preparation and visualization using these new techniques. One tool we want to use is gganimate. This is an R package that allows us to create animated visualizations using the popular ggplot2 plotting package. It provides a simple way to add animations to the graphs by allowing us to add a series of frames to our plot which will change over time. We also potentially might use flexdashboard which is an R package that allows us to easily create interactive dashboards using R Markdown. It extends the capabilities of R, which is the tool we plan to use to generate our analyses. We also are interested in expanding our knowledge of R's capabilities but outputting our insights in the form of a simple web app using Shiny. We will make this decision on whether to proceed with this idea if we have time to pursue it.
+
+At the end of the project, these tools should enable the creation of animated and interactive visualizations that can effectively communicate our insights from our data. We plan to create an effective report on the most recent World Cup games, which will address questions such as what country had the most goals with the least amount of possessions. We also may want to use real-world examples, such as identifying patterns in FIFA World Cup data and making predictions based on the previous tournament performances. Through an iterative approach, we hope to improve efficiency and accuracy throughout the data preparation process and the visualization process.
